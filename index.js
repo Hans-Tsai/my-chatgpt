@@ -86,6 +86,7 @@ function handleText(event) {
         })
         .then((completions) => {
             const message = completions.data.choices[0].text.trim();
+            console.log({ OpenAI_Message: message });
             return client.replyMessage(event.replyToken, {
                 type: "text",
                 text: message,
