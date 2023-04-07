@@ -7,6 +7,7 @@ const cron = require("node-cron");
 const fs = require("fs");
 const path = require("path");
 const cp = require("child_process");
+const util = require("util");
 const { Configuration, OpenAIApi } = require("openai");
 const configuration = new Configuration({ apiKey: process.env.OPENAI_API_KEY });
 const openai = new OpenAIApi(configuration);
@@ -162,18 +163,28 @@ function handleEvent(event) {
 // handle text by ChatGPT feature
 function handleText(event) {
     return openai
-        .createCompletion({
-            prompt: event.message.text,
-            model: "text-davinci-003",
+        .createChatCompletion({
+            model: "gpt-3.5-turbo",
+            messages: [
+                {
+                    role: "user",
+                    content: event.message.text,
+                },
+            ],
             max_tokens: 500,
         })
         .then((completions) => {
-            const message = completions.data.choices[0].text.trim();
-            console.log({ OpenAI_Message: message });
-            return client.replyMessage(event.replyToken, {
+            const [choices] = completions.data.choices;
+            const message = {
                 type: "text",
-                text: message,
-            });
+                text:
+                    choices.message.content.trim() ||
+                    "抱歉，我沒有話可說了。",
+            };
+            console.log(
+                util.inspect({ OpenAI_Message: message }, { colors: true })
+            );
+            return client.replyMessage(event.replyToken, message);
         });
 }
 
