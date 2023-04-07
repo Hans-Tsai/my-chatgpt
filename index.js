@@ -12,6 +12,7 @@ const configuration = new Configuration({ apiKey: process.env.OPENAI_API_KEY });
 const openai = new OpenAIApi(configuration);
 const ngrok = require("ngrok");
 
+//#region Cronjob
 // Schedule a task to delete all files in the "downloaded/" folder every day at midnight
 cron.schedule(
     "0 0 * * *",
@@ -22,7 +23,7 @@ cron.schedule(
 
             // Use the fs.unlink() method to delete each file in the "downloaded/" folder
             for (const file of files) {
-				if (file == ".gitkeep") continue;
+                if (file == ".gitkeep") continue;
                 fs.unlink(`./downloaded/${file}`, (err) => {
                     if (err) throw err;
                 });
@@ -35,14 +36,19 @@ cron.schedule(
     }
 );
 
+//#endregion
+
+//#region Environment Variables Configuration
 const config = {
     channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
     channelSecret: process.env.CHANNEL_SECRET,
 };
 const client = new line.Client(config);
 
-const app = express();
+//#endregion
 
+//#region Using Express framework to build up a Line Chatbot server
+const app = express();
 // serve static and downloaded files
 app.use("/static", express.static("static"));
 app.use("/downloaded", express.static("downloaded"));
@@ -68,6 +74,8 @@ app.post("/webhook", line.middleware(config), (req, res) => {
         });
 });
 
+//#endregion
+
 // simple reply function
 const replyText = (token, texts) => {
     texts = Array.isArray(texts) ? texts : [texts];
@@ -77,23 +85,20 @@ const replyText = (token, texts) => {
     );
 };
 
-function handleText(event) {
-    return openai
-        .createCompletion({
-            prompt: event.message.text,
-            model: "text-davinci-003",
-            max_tokens: 500,
-        })
-        .then((completions) => {
-            const message = completions.data.choices[0].text.trim();
-            console.log({ OpenAI_Message: message });
-            return client.replyMessage(event.replyToken, {
-                type: "text",
-                text: message,
-            });
-        });
+// Download Content tool function
+function downloadContent(messageId, downloadPath) {
+    return client.getMessageContent(messageId).then(
+        (stream) =>
+            new Promise((resolve, reject) => {
+                const writable = fs.createWriteStream(downloadPath);
+                stream.pipe(writable);
+                stream.on("end", () => resolve(downloadPath));
+                stream.on("error", reject);
+            })
+    );
 }
 
+// Webhook main function (handling webhook events based on its event type)
 function handleEvent(event) {
     if (event.replyToken && event.replyToken.match(/^(.)\1*$/)) {
         return console.log(
@@ -153,16 +158,23 @@ function handleEvent(event) {
     }
 }
 
-function downloadContent(messageId, downloadPath) {
-    return client.getMessageContent(messageId).then(
-        (stream) =>
-            new Promise((resolve, reject) => {
-                const writable = fs.createWriteStream(downloadPath);
-                stream.pipe(writable);
-                stream.on("end", () => resolve(downloadPath));
-                stream.on("error", reject);
-            })
-    );
+//#region Handler functions
+// handle text by ChatGPT feature
+function handleText(event) {
+    return openai
+        .createCompletion({
+            prompt: event.message.text,
+            model: "text-davinci-003",
+            max_tokens: 500,
+        })
+        .then((completions) => {
+            const message = completions.data.choices[0].text.trim();
+            console.log({ OpenAI_Message: message });
+            return client.replyMessage(event.replyToken, {
+                type: "text",
+                text: message,
+            });
+        });
 }
 
 function handleImage(message, replyToken) {
@@ -306,6 +318,9 @@ function handleSticker(message, replyToken) {
     });
 }
 
+//#endregion
+
+//#region Start up a Line Chatbot server
 // listen on port
 const port = process.env.PORT || 3000;
 let baseURL = process.env.BASE_URL || "";
@@ -326,3 +341,5 @@ app.listen(port, () => {
             .catch(console.error);
     }
 });
+
+//#endregion
